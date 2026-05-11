@@ -1,0 +1,133 @@
+from aiogram import Bot, F, Router
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message
+
+from config import SUB_PRICE
+from database import check_subscription, get_session, save_user_profile
+from handlers import mailing  # чтобы запускать FSM рассылки
+from keyboards.inline import auth_method_keyboard, payment_keyboard
+from keyboards.premium_menu import premium_reply_menu
+from utils.animations import typing_animation
+
+router = Router()
+
+
+async def _send_login_prompt(bot: Bot, user_id: int):
+    await bot.send_message(
+        chat_id=user_id,
+        text="🔐 Выберите способ авторизации:",
+        reply_markup=auth_method_keyboard(),
+    )
+
+
+async def _send_buy_access_prompt(bot: Bot, user_id: int):
+    await bot.send_message(
+        chat_id=user_id,
+        text=(
+            f"💳 Доступ к боту стоит {SUB_PRICE} ₽.\n\n"
+            f"Это разовая покупка без срока окончания.\n"
+            f"Переведите сумму на мои реквизиты: 89508543308(Сбербанк) и нажмите кнопку ниже:"
+        ),
+        reply_markup=payment_keyboard(),
+    )
+
+
+async def _send_profile(bot: Bot, user_id: int):
+    is_active = await check_subscription(user_id)
+    has_session = bool(await get_session(user_id))
+    status_text = "✅ Доступ к боту активен" if is_active else "❌ Доступ к боту не активирован"
+    auth_text = "✅ Авторизация сохранена" if has_session else "❌ Авторизация не пройдена"
+
+    await bot.send_message(
+        chat_id=user_id,
+        text=f"👤 <b>Профиль</b>\n\n{status_text}\n{auth_text}",
+        parse_mode="HTML",
+    )
+
+
+async def _start_mailing(bot: Bot, user_id: int, state: FSMContext):
+    if not await check_subscription(user_id):
+        await bot.send_message(user_id, "❌ У вас нет доступа к боту.")
+        return
+
+    await state.set_state(mailing.MailingStates.text)
+    await bot.send_message(
+        user_id,
+        "🚀 Давайте создадим рассылку.\n"
+        "Введите текст для рассылки. Можно с форматированием: жирный, курсив, зачеркнутый, подчеркнутый и т.д.\n"
+        "Для отмены в любой момент отправьте /cancel.",
+    )
+
+
+@router.message(Command("start"))
+async def start_handler(message: Message):
+    await save_user_profile(message.from_user.id, message.from_user.username)
+    await typing_animation(message.bot, message.chat.id, 2)
+
+    await message.bot.send_message(
+        chat_id=message.chat.id,
+        text=(
+            "💎 <b>Premium Mailing System</b>\n"
+            "━━━━━━━━━━━━━━━━━━━\n\n"
+            "🚀 Автоматические рассылки\n"
+            "🔐 Безопасная авторизация\n"
+            "📊 Live-статистика\n\n"
+            "👇 Выберите действие:"
+        ),
+        parse_mode="HTML",
+        reply_markup=premium_reply_menu(),
+    )
+
+
+@router.callback_query(F.data == "login")
+async def login_callback(callback: CallbackQuery):
+    await callback.answer()
+    await _send_login_prompt(callback.bot, callback.from_user.id)
+
+
+@router.callback_query(F.data == "subscribe")
+async def subscribe_callback(callback: CallbackQuery):
+    await callback.answer()
+    if not await get_session(callback.from_user.id):
+        await callback.bot.send_message(
+            callback.from_user.id,
+            "❌ Сначала зарегистрируйтесь через кнопку 'Авторизация'.",
+        )
+        return
+    await _send_buy_access_prompt(callback.bot, callback.from_user.id)
+
+
+@router.callback_query(F.data == "profile")
+async def profile_callback(callback: CallbackQuery):
+    await callback.answer()
+    await _send_profile(callback.bot, callback.from_user.id)
+
+
+@router.callback_query(F.data == "mailing")
+async def mailing_callback(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await _start_mailing(callback.bot, callback.from_user.id, state)
+
+
+@router.message(F.text.in_(["Авторизация", "🔐 Авторизация"]))
+async def login_button(message: Message):
+    await _send_login_prompt(message.bot, message.from_user.id)
+
+
+@router.message(F.text.in_(["Купить доступ", "💳 Купить доступ", "Подписка", "💳 Подписка"]))
+async def subscribe_button(message: Message):
+    if not await get_session(message.from_user.id):
+        await message.answer("❌ Сначала зарегистрируйтесь через кнопку 'Авторизация'.")
+        return
+    await _send_buy_access_prompt(message.bot, message.from_user.id)
+
+
+@router.message(F.text.in_(["Профиль", "👤 Профиль"]))
+async def profile_button(message: Message):
+    await _send_profile(message.bot, message.from_user.id)
+
+
+@router.message(F.text.in_(["Создать рассылку", "🚀 Создать рассылку"]))
+async def mailing_button(message: Message, state: FSMContext):
+    await _start_mailing(message.bot, message.from_user.id, state)
