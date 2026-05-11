@@ -1,0 +1,5 @@
+aiogram>=3.0,<4.0
+telethon>=1.36,<2.0
+aiosqlite>=0.19,<1.0
+python-dotenv>=1.0,<2.0
+cryptography>=42.0,<46.0
