@@ -91,17 +91,37 @@ def resend_keyboard() -> InlineKeyboardMarkup:
 
 
 async def _send_qr_message(message: Message, qr_url: str, *, refreshed: bool = False):
-    img = qrcode.make(qr_url)
-    buffer = BytesIO()
-    img.save(buffer, format="PNG")
-    buffer.seek(0)
-    qr_file = BufferedInputFile(buffer.getvalue(), filename="login_qr.png")
     caption = (
         "📱 Откройте Telegram на телефоне: Настройки -> Устройства -> "
         "Сканировать QR, затем отсканируйте код. Время ожидания: 2 минуты."
     )
     if refreshed:
         caption = "🔄 QR-код был обновлён. Отсканируйте новый код.\n\n" + caption
+
+    if not qrcode:
+        fallback_message = await message.answer(
+            "QR-картинка недоступна на сервере, но вход можно завершить по кнопке ниже.\n\n"
+            "Откройте её на телефоне, где уже выполнен вход в Telegram.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Открыть вход в Telegram", url=qr_url)]
+                ]
+            ),
+        )
+        asyncio.create_task(
+            _schedule_delete_message(
+                message.bot,
+                fallback_message.chat.id,
+                fallback_message.message_id,
+            )
+        )
+        return fallback_message
+
+    img = qrcode.make(qr_url)
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    qr_file = BufferedInputFile(buffer.getvalue(), filename="login_qr.png")
 
     qr_message = await message.answer_photo(
         photo=qr_file,
@@ -158,13 +178,6 @@ async def _start_qr_login(
     user_id: int | None = None,
     username: str | None = None,
 ):
-    if not qrcode:
-        await message.answer(
-            "❌ QR-вход временно недоступен на сервере. "
-            "Установите библиотеку qrcode и попробуйте снова."
-        )
-        return
-
     resolved_user_id = user_id if user_id is not None else message.from_user.id
     resolved_username = username if username is not None else message.from_user.username
     previous_auth_id = (await state.get_data()).get("auth_id")
