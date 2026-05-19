@@ -4,7 +4,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 def payment_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Что входит в стоимость", callback_data="tariff_details")],
+            [InlineKeyboardButton(text="Что входит в стоимость?", callback_data="tariff_details")],
             [InlineKeyboardButton(text="💰 Я оплатил", callback_data="paid")],
         ]
     )

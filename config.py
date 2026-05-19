@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 # Загружаем переменные из .env
 load_dotenv()
 
+BASE_DIR = os.path.dirname(__file__)
+
 def _require_env(name: str) -> str:
     value = os.getenv(name)
     if not value:
@@ -51,6 +53,8 @@ FLOODWAIT_DELAY_SCALE_DIVISOR = _get_int("FLOODWAIT_DELAY_SCALE_DIVISOR", 10)
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 POLLING_RETRY_BASE_SECONDS = int(os.getenv("POLLING_RETRY_BASE_SECONDS", 3))
 POLLING_RETRY_MAX_SECONDS = int(os.getenv("POLLING_RETRY_MAX_SECONDS", 60))
+BOT_DATA_DIR = os.getenv("BOT_DATA_DIR", BASE_DIR)
+DATABASE_PATH = os.getenv("DATABASE_PATH", os.path.join(BOT_DATA_DIR, "database.db"))
 
 # ====== Админ ======
 ADMIN_ID = _require_int("ADMIN_ID")

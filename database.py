@@ -2,9 +2,13 @@ import aiosqlite
 import os
 from datetime import datetime
 
+from config import DATABASE_PATH
 from utils.crypto import decrypt_session, encrypt_session
 
-DB = os.path.join(os.path.dirname(__file__), "database.db")
+DB = DATABASE_PATH
+db_dir = os.path.dirname(DB)
+if db_dir:
+    os.makedirs(db_dir, exist_ok=True)
 
 
 def _normalize_username(username: str | None) -> str | None:

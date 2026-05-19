@@ -152,7 +152,7 @@ async def subscribe_button(message: Message):
     await _send_buy_access_prompt(message.bot, message.from_user.id)
 
 
-@router.message(F.text == "Что входит в стоимость")
+@router.message(F.text.in_(["Что входит в стоимость", "Что входит в стоимость?"]))
 async def tariff_details_button(message: Message):
     await _send_tariff_details(message.bot, message.from_user.id)
 

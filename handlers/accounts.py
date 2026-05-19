@@ -54,7 +54,7 @@ async def _start_add_account(
     )
 
 
-@router.message(F.text == "Добавить аккаунт")
+@router.message(F.text.in_(["Добавить аккаунт", "➕ Добавить аккаунт"]))
 async def add_account_button(message: Message, state: FSMContext):
     await _start_add_account(message, state)
 
