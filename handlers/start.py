@@ -13,6 +13,20 @@ from utils.animations import typing_animation
 router = Router()
 
 
+TARIFF_DETAILS_TEXT = (
+    "💎 <b>Что входит в стоимость</b>\n\n"
+    "• Разовый доступ к боту без срока окончания.\n"
+    "• Авторизация Telegram-аккаунта по QR или номеру.\n"
+    "• Массовая рассылка по username с настраиваемой задержкой.\n"
+    "• Режим сохранения сообщений в черновики.\n"
+    "• Защита от повторной рассылки по уже использованным username.\n"
+    "• Live-статистика выполнения и управление рассылкой: стоп/продолжить.\n"
+    "• Сканирование чатов и комментариев для сбора username.\n"
+    "• Проверка, у каких username есть Telegram-каналы.\n"
+    "• Возможность добавить второй аккаунт через подтверждение приглашения."
+)
+
+
 async def _send_login_prompt(bot: Bot, user_id: int):
     await bot.send_message(
         chat_id=user_id,
@@ -46,6 +60,14 @@ async def _send_profile(bot: Bot, user_id: int):
     )
 
 
+async def _send_tariff_details(bot: Bot, user_id: int):
+    await bot.send_message(
+        chat_id=user_id,
+        text=TARIFF_DETAILS_TEXT,
+        parse_mode="HTML",
+    )
+
+
 async def _start_mailing(bot: Bot, user_id: int, state: FSMContext):
     if not await check_subscription(user_id):
         await bot.send_message(user_id, "❌ У вас нет доступа к боту.")
@@ -64,6 +86,7 @@ async def _start_mailing(bot: Bot, user_id: int, state: FSMContext):
 async def start_handler(message: Message):
     await save_user_profile(message.from_user.id, message.from_user.username)
     await typing_animation(message.bot, message.chat.id, 2)
+    has_access = await check_subscription(message.from_user.id)
 
     await message.bot.send_message(
         chat_id=message.chat.id,
@@ -76,7 +99,7 @@ async def start_handler(message: Message):
             "👇 Выберите действие:"
         ),
         parse_mode="HTML",
-        reply_markup=premium_reply_menu(),
+        reply_markup=premium_reply_menu(has_access=has_access),
     )
 
 
@@ -96,6 +119,12 @@ async def subscribe_callback(callback: CallbackQuery):
         )
         return
     await _send_buy_access_prompt(callback.bot, callback.from_user.id)
+
+
+@router.callback_query(F.data == "tariff_details")
+async def tariff_details_callback(callback: CallbackQuery):
+    await callback.answer()
+    await _send_tariff_details(callback.bot, callback.from_user.id)
 
 
 @router.callback_query(F.data == "profile")
@@ -121,6 +150,11 @@ async def subscribe_button(message: Message):
         await message.answer("❌ Сначала зарегистрируйтесь через кнопку 'Авторизация'.")
         return
     await _send_buy_access_prompt(message.bot, message.from_user.id)
+
+
+@router.message(F.text == "Что входит в стоимость")
+async def tariff_details_button(message: Message):
+    await _send_tariff_details(message.bot, message.from_user.id)
 
 
 @router.message(F.text.in_(["Профиль", "👤 Профиль"]))

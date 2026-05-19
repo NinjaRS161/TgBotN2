@@ -3,7 +3,10 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 def payment_keyboard():
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="💰 Я оплатил", callback_data="paid")]]
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Что входит в стоимость", callback_data="tariff_details")],
+            [InlineKeyboardButton(text="💰 Я оплатил", callback_data="paid")],
+        ]
     )
 
 
@@ -29,6 +32,23 @@ def auth_method_keyboard():
         inline_keyboard=[
             [InlineKeyboardButton(text="📱 Вход по номеру", callback_data="auth_phone")],
             [InlineKeyboardButton(text="🔳 Вход по QR", callback_data="auth_qr")],
+        ]
+    )
+
+
+def account_invite_keyboard(invite_id: int):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Принять",
+                    callback_data=f"account_invite_accept:{invite_id}",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отклонить",
+                    callback_data=f"account_invite_reject:{invite_id}",
+                ),
+            ]
         ]
     )
 

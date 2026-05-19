@@ -79,6 +79,20 @@ async def init_db():
         )
 
         await db.execute(
+            """
+        CREATE TABLE IF NOT EXISTS account_invites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id INTEGER NOT NULL,
+            invited_id INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL,
+            decided_at TEXT,
+            UNIQUE(owner_id, invited_id)
+        )
+        """
+        )
+
+        await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status)"
         )
         await db.execute(
@@ -89,6 +103,9 @@ async def init_db():
             CREATE INDEX IF NOT EXISTS idx_mailing_recipients_mailing_username
             ON mailing_recipients(mailing_id, username)
             """
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_account_invites_invited_id ON account_invites(invited_id)"
         )
 
         await db.commit()
@@ -136,6 +153,30 @@ async def get_session(user_id: int):
         return decrypt_session(row[0]) if row else None
 
 
+async def find_user_by_username(username: str):
+    username = _normalize_username(username)
+    if not username:
+        return None
+
+    async with aiosqlite.connect(DB) as db:
+        cursor = await db.execute(
+            """
+            SELECT telegram_id, username, session_string
+            FROM users
+            WHERE lower(username)=lower(?)
+            """,
+            (username,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "telegram_id": row[0],
+            "username": row[1],
+            "has_session": bool(row[2]),
+        }
+
+
 async def get_subscription_until(user_id: int):
     async with aiosqlite.connect(DB) as db:
         cursor = await db.execute(
@@ -176,6 +217,85 @@ async def extend_subscription(user_id: int, months: int = 1, username: str | Non
             (user_id, username),
         )
         await db.commit()
+
+
+async def grant_access(user_id: int, username: str | None = None):
+    username = _normalize_username(username)
+    async with aiosqlite.connect(DB) as db:
+        await db.execute(
+            """
+            INSERT INTO users (telegram_id, access_granted, username)
+            VALUES (?, 1, ?)
+            ON CONFLICT(telegram_id)
+            DO UPDATE SET
+                access_granted=1,
+                username=COALESCE(excluded.username, users.username)
+            """,
+            (user_id, username),
+        )
+        await db.commit()
+
+
+async def create_account_invite(owner_id: int, invited_id: int) -> int:
+    async with aiosqlite.connect(DB) as db:
+        await db.execute(
+            """
+            INSERT INTO account_invites (owner_id, invited_id, status, created_at, decided_at)
+            VALUES (?, ?, 'pending', ?, NULL)
+            ON CONFLICT(owner_id, invited_id)
+            DO UPDATE SET
+                status='pending',
+                created_at=excluded.created_at,
+                decided_at=NULL
+            """,
+            (owner_id, invited_id, datetime.utcnow().isoformat()),
+        )
+        cursor = await db.execute(
+            """
+            SELECT id
+            FROM account_invites
+            WHERE owner_id=? AND invited_id=?
+            """,
+            (owner_id, invited_id),
+        )
+        row = await cursor.fetchone()
+        await db.commit()
+        return int(row[0])
+
+
+async def get_account_invite(invite_id: int):
+    async with aiosqlite.connect(DB) as db:
+        cursor = await db.execute(
+            """
+            SELECT id, owner_id, invited_id, status
+            FROM account_invites
+            WHERE id=?
+            """,
+            (invite_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0],
+            "owner_id": row[1],
+            "invited_id": row[2],
+            "status": row[3],
+        }
+
+
+async def set_account_invite_status(invite_id: int, status: str) -> bool:
+    async with aiosqlite.connect(DB) as db:
+        cursor = await db.execute(
+            """
+            UPDATE account_invites
+            SET status=?, decided_at=?
+            WHERE id=? AND status='pending'
+            """,
+            (status, datetime.utcnow().isoformat(), invite_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
 
 
 async def get_users_with_subscriptions():

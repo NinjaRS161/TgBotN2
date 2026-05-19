@@ -11,7 +11,7 @@ from config import (
     POLLING_RETRY_MAX_SECONDS,
 )
 from database import DB, init_db
-from handlers import auth, common, mailing, scanner, start, tariff
+from handlers import accounts, auth, common, mailing, scanner, start, tariff
 from utils.logging_setup import configure_logging
 from utils.sqlite_fsm import SQLiteStorage
 
@@ -26,6 +26,7 @@ def create_dispatcher() -> Dispatcher:
     dp.include_router(common.router)
     dp.include_router(start.router)
     dp.include_router(auth.router)
+    dp.include_router(accounts.router)
     dp.include_router(tariff.router)
     dp.include_router(scanner.router)
     dp.include_router(mailing.router)

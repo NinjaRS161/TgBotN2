@@ -12,6 +12,7 @@ from database import (
     save_user_profile,
 )
 from keyboards.inline import admin_approve_keyboard, payment_keyboard
+from keyboards.premium_menu import premium_reply_menu
 
 router = Router()
 
@@ -69,6 +70,7 @@ async def approve_payment(callback: CallbackQuery):
     await callback.bot.send_message(
         chat_id=user_id,
         text="✅ Оплата подтверждена! Доступ к боту открыт, теперь вы можете создавать рассылки.",
+        reply_markup=premium_reply_menu(has_access=True),
     )
 
     await callback.answer("Доступ открыт!")
