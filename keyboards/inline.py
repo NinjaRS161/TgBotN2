@@ -53,6 +53,17 @@ def account_invite_keyboard(invite_id: int):
     )
 
 
+def trial_feedback_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Да, понравилось", callback_data="trial_liked_yes"),
+                InlineKeyboardButton(text="Нет", callback_data="trial_liked_no"),
+            ]
+        ]
+    )
+
+
 def start_mailing_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="🚀 Запустить рассылку", callback_data="start_mailing_now")]]

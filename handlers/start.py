@@ -3,8 +3,14 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from config import SUB_PRICE
-from database import check_subscription, get_session, save_user_profile
+from config import SUB_PRICE, TRIAL_DAYS
+from database import (
+    check_subscription,
+    get_access_status,
+    get_session,
+    save_user_profile,
+    start_trial_if_needed,
+)
 from handlers import mailing  # чтобы запускать FSM рассылки
 from keyboards.inline import auth_method_keyboard, payment_keyboard
 from keyboards.premium_menu import premium_reply_menu
@@ -15,6 +21,7 @@ router = Router()
 
 TARIFF_DETAILS_TEXT = (
     "💎 <b>Что входит в стоимость</b>\n\n"
+    f"• {TRIAL_DAYS} пробных дня для знакомства с ботом.\n"
     "• Разовый доступ к боту без срока окончания.\n"
     "• Авторизация Telegram-аккаунта по QR или номеру.\n"
     "• Массовая рассылка по username с настраиваемой задержкой.\n"
@@ -48,9 +55,19 @@ async def _send_buy_access_prompt(bot: Bot, user_id: int):
 
 
 async def _send_profile(bot: Bot, user_id: int):
-    is_active = await check_subscription(user_id)
+    access_status = await get_access_status(user_id)
+    is_active = access_status["status"] in {"paid", "trial"}
     has_session = bool(await get_session(user_id))
-    status_text = "✅ Доступ к боту активен" if is_active else "❌ Доступ к боту не активирован"
+    if access_status["status"] == "paid":
+        status_text = "✅ Полный доступ к боту активен"
+    elif access_status["status"] == "trial":
+        trial_until = access_status.get("trial_until")
+        until_text = trial_until.strftime("%d.%m.%Y %H:%M") if trial_until else "скоро"
+        status_text = f"✅ Пробный доступ активен до {until_text}"
+    elif access_status["status"] == "expired":
+        status_text = "⌛ Пробный доступ истёк"
+    else:
+        status_text = "❌ Доступ к боту не активирован"
     auth_text = "✅ Авторизация сохранена" if has_session else "❌ Авторизация не пройдена"
 
     await bot.send_message(
@@ -84,9 +101,20 @@ async def _start_mailing(bot: Bot, user_id: int, state: FSMContext):
 
 @router.message(Command("start"))
 async def start_handler(message: Message):
+    trial = await start_trial_if_needed(message.from_user.id, message.from_user.username)
     await save_user_profile(message.from_user.id, message.from_user.username)
     await typing_animation(message.bot, message.chat.id, 2)
     has_access = await check_subscription(message.from_user.id)
+
+    if trial and trial["status"] == "trial" and trial["is_new"]:
+        trial_until = trial["trial_until"].strftime("%d.%m.%Y %H:%M")
+        await message.bot.send_message(
+            chat_id=message.chat.id,
+            text=(
+                f"🎁 Вам открыт пробный доступ на {TRIAL_DAYS} дня.\n"
+                f"Он действует до {trial_until}."
+            ),
+        )
 
     await message.bot.send_message(
         chat_id=message.chat.id,

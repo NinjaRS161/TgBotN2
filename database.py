@@ -1,8 +1,8 @@
 import aiosqlite
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from config import DATABASE_PATH
+from config import DATABASE_PATH, TRIAL_DAYS
 from utils.crypto import decrypt_session, encrypt_session
 
 DB = DATABASE_PATH
@@ -15,6 +15,12 @@ def _normalize_username(username: str | None) -> str | None:
     if not username:
         return None
     return username.lstrip("@").strip() or None
+
+
+def _parse_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    return datetime.fromisoformat(value)
 
 
 async def init_db():
@@ -45,6 +51,14 @@ async def init_db():
                 SET access_granted = 1
                 WHERE subscription_until IS NOT NULL
                 """
+            )
+        if "trial_started_at" not in columns:
+            await db.execute("ALTER TABLE users ADD COLUMN trial_started_at TEXT")
+        if "trial_until" not in columns:
+            await db.execute("ALTER TABLE users ADD COLUMN trial_until TEXT")
+        if "trial_feedback_sent" not in columns:
+            await db.execute(
+                "ALTER TABLE users ADD COLUMN trial_feedback_sent INTEGER NOT NULL DEFAULT 0"
             )
 
         await db.execute(
@@ -188,22 +202,160 @@ async def get_subscription_until(user_id: int):
         )
         row = await cursor.fetchone()
         if row and row[0]:
-            return datetime.fromisoformat(row[0])
+            return _parse_datetime(row[0])
         return None
 
 
 async def check_subscription(user_id: int):
-    subscription_until = await get_subscription_until(user_id)
     async with aiosqlite.connect(DB) as db:
         cursor = await db.execute(
-            "SELECT access_granted FROM users WHERE telegram_id=?", (user_id,)
+            """
+            SELECT access_granted, subscription_until, trial_until
+            FROM users
+            WHERE telegram_id=?
+            """,
+            (user_id,),
         )
         row = await cursor.fetchone()
-        if row and row[0]:
-            return True
-    if not subscription_until:
+    if not row:
         return False
-    return subscription_until > datetime.utcnow()
+
+    access_granted, subscription_until, trial_until = row
+    if access_granted:
+        return True
+
+    now = datetime.utcnow()
+    subscription_dt = _parse_datetime(subscription_until)
+    if subscription_dt and subscription_dt > now:
+        return True
+
+    trial_dt = _parse_datetime(trial_until)
+    return bool(trial_dt and trial_dt > now)
+
+
+async def start_trial_if_needed(user_id: int, username: str | None = None):
+    username = _normalize_username(username)
+    now = datetime.utcnow()
+    trial_until = now + timedelta(days=max(TRIAL_DAYS, 1))
+
+    async with aiosqlite.connect(DB) as db:
+        await db.execute(
+            """
+            INSERT INTO users (telegram_id, username)
+            VALUES (?, ?)
+            ON CONFLICT(telegram_id)
+            DO UPDATE SET username=COALESCE(excluded.username, users.username)
+            """,
+            (user_id, username),
+        )
+        cursor = await db.execute(
+            """
+            SELECT access_granted, subscription_until, trial_started_at, trial_until
+            FROM users
+            WHERE telegram_id=?
+            """,
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            await db.commit()
+            return None
+
+        access_granted, subscription_until_raw, trial_started_raw, trial_until_raw = row
+        subscription_dt = _parse_datetime(subscription_until_raw)
+        if access_granted or (subscription_dt and subscription_dt > now):
+            await db.commit()
+            return {
+                "status": "paid",
+                "is_new": False,
+                "trial_until": None,
+            }
+
+        if not trial_started_raw:
+            await db.execute(
+                """
+                UPDATE users
+                SET trial_started_at=?, trial_until=?, trial_feedback_sent=0
+                WHERE telegram_id=?
+                """,
+                (now.isoformat(), trial_until.isoformat(), user_id),
+            )
+            await db.commit()
+            return {
+                "status": "trial",
+                "is_new": True,
+                "trial_until": trial_until,
+            }
+
+        await db.commit()
+        existing_trial_until = _parse_datetime(trial_until_raw)
+        return {
+            "status": "trial" if existing_trial_until and existing_trial_until > now else "expired",
+            "is_new": False,
+            "trial_until": existing_trial_until,
+        }
+
+
+async def get_access_status(user_id: int):
+    async with aiosqlite.connect(DB) as db:
+        cursor = await db.execute(
+            """
+            SELECT access_granted, subscription_until, trial_until
+            FROM users
+            WHERE telegram_id=?
+            """,
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return {"status": "none", "trial_until": None}
+
+    access_granted, subscription_until_raw, trial_until_raw = row
+    if access_granted:
+        return {"status": "paid", "trial_until": None}
+
+    now = datetime.utcnow()
+    subscription_dt = _parse_datetime(subscription_until_raw)
+    if subscription_dt and subscription_dt > now:
+        return {"status": "paid", "trial_until": None}
+
+    trial_until = _parse_datetime(trial_until_raw)
+    if trial_until and trial_until > now:
+        return {"status": "trial", "trial_until": trial_until}
+    if trial_until:
+        return {"status": "expired", "trial_until": trial_until}
+    return {"status": "none", "trial_until": None}
+
+
+async def get_expired_trials_for_feedback(limit: int = 50):
+    async with aiosqlite.connect(DB) as db:
+        cursor = await db.execute(
+            """
+            SELECT telegram_id, username, trial_until
+            FROM users
+            WHERE COALESCE(access_granted, 0)=0
+              AND trial_until IS NOT NULL
+              AND trial_until <= ?
+              AND COALESCE(trial_feedback_sent, 0)=0
+            ORDER BY trial_until ASC
+            LIMIT ?
+            """,
+            (datetime.utcnow().isoformat(), limit),
+        )
+        return await cursor.fetchall()
+
+
+async def mark_trial_feedback_sent(user_id: int):
+    async with aiosqlite.connect(DB) as db:
+        await db.execute(
+            """
+            UPDATE users
+            SET trial_feedback_sent=1
+            WHERE telegram_id=?
+            """,
+            (user_id,),
+        )
+        await db.commit()
 
 
 async def extend_subscription(user_id: int, months: int = 1, username: str | None = None):
