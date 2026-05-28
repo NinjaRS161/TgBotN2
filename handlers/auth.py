@@ -21,8 +21,8 @@ from telethon.errors import (
 )
 from telethon.sessions import StringSession
 
-from config import API_HASH, API_ID
-from database import save_session, save_user_profile
+from config import API_HASH, API_ID, TRIAL_DAYS
+from database import save_session, save_user_profile, start_trial_if_needed
 from states.auth_states import AuthStates
 
 try:
@@ -149,6 +149,13 @@ async def _finish_login(
 
     await save_session(resolved_user_id, session_str, resolved_username)
     await message.answer(text)
+    trial = await start_trial_if_needed(resolved_user_id, resolved_username)
+    if trial and trial["status"] == "trial" and trial["is_new"]:
+        trial_until = trial["trial_until"].strftime("%d.%m.%Y %H:%M")
+        await message.answer(
+            f"🎁 Вам открыт пробный доступ на {TRIAL_DAYS} дня.\n"
+            f"Он действует до {trial_until}."
+        )
     await _drop_auth_client(auth_id)
     await state.clear()
 

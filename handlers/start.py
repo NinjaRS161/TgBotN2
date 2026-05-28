@@ -10,7 +10,6 @@ from database import (
     get_session,
     is_trial_feedback_pending,
     save_user_profile,
-    start_trial_if_needed,
 )
 from handlers import mailing  # чтобы запускать FSM рассылки
 from handlers.trial import send_trial_feedback_request
@@ -103,21 +102,11 @@ async def _start_mailing(bot: Bot, user_id: int, state: FSMContext):
 
 @router.message(Command("start"))
 async def start_handler(message: Message):
-    trial = await start_trial_if_needed(message.from_user.id, message.from_user.username)
     await save_user_profile(message.from_user.id, message.from_user.username)
     await typing_animation(message.bot, message.chat.id, 2)
     has_access = await check_subscription(message.from_user.id)
 
-    if trial and trial["status"] == "trial" and trial["is_new"]:
-        trial_until = trial["trial_until"].strftime("%d.%m.%Y %H:%M")
-        await message.bot.send_message(
-            chat_id=message.chat.id,
-            text=(
-                f"🎁 Вам открыт пробный доступ на {TRIAL_DAYS} дня.\n"
-                f"Он действует до {trial_until}."
-            ),
-        )
-    elif await is_trial_feedback_pending(message.from_user.id):
+    if await is_trial_feedback_pending(message.from_user.id):
         await send_trial_feedback_request(message.bot, message.from_user.id)
 
     await message.bot.send_message(
