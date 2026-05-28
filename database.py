@@ -195,6 +195,42 @@ async def find_user_by_username(username: str):
         }
 
 
+async def get_user_by_id_or_username(value: str):
+    value = (value or "").strip()
+    if not value:
+        return None
+
+    async with aiosqlite.connect(DB) as db:
+        if value.lstrip("-").isdigit():
+            cursor = await db.execute(
+                """
+                SELECT telegram_id, username
+                FROM users
+                WHERE telegram_id=?
+                """,
+                (int(value),),
+            )
+        else:
+            username = _normalize_username(value)
+            if not username:
+                return None
+            cursor = await db.execute(
+                """
+                SELECT telegram_id, username
+                FROM users
+                WHERE lower(username)=lower(?)
+                """,
+                (username,),
+            )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "telegram_id": row[0],
+            "username": row[1],
+        }
+
+
 async def get_subscription_until(user_id: int):
     async with aiosqlite.connect(DB) as db:
         cursor = await db.execute(
@@ -345,6 +381,23 @@ async def get_expired_trials_for_feedback(limit: int = 50):
         return await cursor.fetchall()
 
 
+async def is_trial_feedback_pending(user_id: int) -> bool:
+    async with aiosqlite.connect(DB) as db:
+        cursor = await db.execute(
+            """
+            SELECT 1
+            FROM users
+            WHERE telegram_id=?
+              AND COALESCE(access_granted, 0)=0
+              AND trial_until IS NOT NULL
+              AND trial_until <= ?
+              AND COALESCE(trial_feedback_sent, 0)=0
+            """,
+            (user_id, datetime.utcnow().isoformat()),
+        )
+        return await cursor.fetchone() is not None
+
+
 async def mark_trial_feedback_sent(user_id: int):
     async with aiosqlite.connect(DB) as db:
         await db.execute(
@@ -356,6 +409,43 @@ async def mark_trial_feedback_sent(user_id: int):
             (user_id,),
         )
         await db.commit()
+
+
+async def add_trial_days(user_id: int, days: int) -> datetime | None:
+    days = max(days, 1)
+    now = datetime.utcnow()
+
+    async with aiosqlite.connect(DB) as db:
+        cursor = await db.execute(
+            """
+            SELECT trial_started_at, trial_until
+            FROM users
+            WHERE telegram_id=?
+            """,
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+
+        trial_started_at, trial_until_raw = row
+        current_trial_until = _parse_datetime(trial_until_raw)
+        base = current_trial_until if current_trial_until and current_trial_until > now else now
+        new_trial_until = base + timedelta(days=days)
+        started_at = trial_started_at or now.isoformat()
+
+        await db.execute(
+            """
+            UPDATE users
+            SET trial_started_at=?,
+                trial_until=?,
+                trial_feedback_sent=0
+            WHERE telegram_id=?
+            """,
+            (started_at, new_trial_until.isoformat(), user_id),
+        )
+        await db.commit()
+        return new_trial_until
 
 
 async def extend_subscription(user_id: int, months: int = 1, username: str | None = None):
@@ -458,7 +548,13 @@ async def get_users_with_subscriptions():
     async with aiosqlite.connect(DB) as db:
         cursor = await db.execute(
             """
-            SELECT telegram_id, username, access_granted, subscription_until
+            SELECT
+                telegram_id,
+                username,
+                access_granted,
+                subscription_until,
+                trial_until,
+                trial_feedback_sent
             FROM users
             ORDER BY telegram_id ASC
             """

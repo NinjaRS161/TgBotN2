@@ -106,12 +106,15 @@ async def list_users(message: Message):
 
     lines = ["👥 <b>Пользователи</b>"]
 
-    for user_id, username, access_granted, subscription_until in rows:
+    for user_id, username, access_granted, subscription_until, trial_until, trial_feedback_sent in rows:
         name = f"@{username}" if username else "(без username)"
         if access_granted:
             lines.append(f"• {user_id} | {name} | доступ открыт")
         elif subscription_until:
             lines.append(f"• {user_id} | {name} | доступ открыт (legacy)")
+        elif trial_until:
+            feedback = ", отзыв запрошен" if trial_feedback_sent else ""
+            lines.append(f"• {user_id} | {name} | trial до {trial_until}{feedback}")
         else:
             lines.append(f"• {user_id} | {name} | доступа нет")
 

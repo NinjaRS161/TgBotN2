@@ -15,10 +15,8 @@ from database import (
     DB,
     get_expired_trials_for_feedback,
     init_db,
-    mark_trial_feedback_sent,
 )
-from handlers import accounts, auth, common, mailing, scanner, start, tariff, trial
-from keyboards.inline import trial_feedback_keyboard
+from handlers import accounts, admin, auth, common, mailing, scanner, start, tariff, trial
 from utils.logging_setup import configure_logging
 from utils.sqlite_fsm import SQLiteStorage
 
@@ -32,6 +30,7 @@ def create_dispatcher() -> Dispatcher:
 
     dp.include_router(common.router)
     dp.include_router(start.router)
+    dp.include_router(admin.router)
     dp.include_router(auth.router)
     dp.include_router(accounts.router)
     dp.include_router(tariff.router)
@@ -48,15 +47,7 @@ async def trial_feedback_loop(bot: Bot) -> None:
             expired_trials = await get_expired_trials_for_feedback()
             for user_id, _username, _trial_until in expired_trials:
                 try:
-                    await bot.send_message(
-                        chat_id=user_id,
-                        text=(
-                            "⌛ Ваш пробный период закончился.\n\n"
-                            "Как вам бот? Понравилось пользоваться?"
-                        ),
-                        reply_markup=trial_feedback_keyboard(),
-                    )
-                    await mark_trial_feedback_sent(user_id)
+                    await trial.send_trial_feedback_request(bot, user_id)
                 except Exception:
                     logger.exception("Failed to send trial feedback request to %s", user_id)
             await asyncio.sleep(interval)

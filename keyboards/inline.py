@@ -27,6 +27,15 @@ def admin_approve_keyboard(payment_id: int):
     )
 
 
+def admin_panel_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Добавить пробные дни", callback_data="admin_add_trial")],
+            [InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users")],
+        ]
+    )
+
+
 def auth_method_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[

@@ -58,7 +58,7 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", os.path.join(BOT_DATA_DIR, "database.
 TRIAL_DAYS = _get_int("TRIAL_DAYS", 3)
 TRIAL_FEEDBACK_CHECK_INTERVAL_SECONDS = _get_int(
     "TRIAL_FEEDBACK_CHECK_INTERVAL_SECONDS",
-    3600,
+    300,
 )
 
 # ====== Админ ======

@@ -4,7 +4,8 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from config import ADMIN_ID, SUB_PRICE
-from keyboards.inline import payment_keyboard
+from database import mark_trial_feedback_sent
+from keyboards.inline import payment_keyboard, trial_feedback_keyboard
 
 
 class TrialFeedbackStates(StatesGroup):
@@ -12,6 +13,18 @@ class TrialFeedbackStates(StatesGroup):
 
 
 router = Router()
+
+
+async def send_trial_feedback_request(bot, user_id: int):
+    await bot.send_message(
+        chat_id=user_id,
+        text=(
+            "⌛ Ваш пробный период закончился.\n\n"
+            "Как вам бот? Понравилось пользоваться?"
+        ),
+        reply_markup=trial_feedback_keyboard(),
+    )
+    await mark_trial_feedback_sent(user_id)
 
 
 @router.callback_query(F.data == "trial_liked_yes")

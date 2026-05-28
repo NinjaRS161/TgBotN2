@@ -8,10 +8,12 @@ from database import (
     check_subscription,
     get_access_status,
     get_session,
+    is_trial_feedback_pending,
     save_user_profile,
     start_trial_if_needed,
 )
 from handlers import mailing  # чтобы запускать FSM рассылки
+from handlers.trial import send_trial_feedback_request
 from keyboards.inline import auth_method_keyboard, payment_keyboard
 from keyboards.premium_menu import premium_reply_menu
 from utils.animations import typing_animation
@@ -115,6 +117,8 @@ async def start_handler(message: Message):
                 f"Он действует до {trial_until}."
             ),
         )
+    elif await is_trial_feedback_pending(message.from_user.id):
+        await send_trial_feedback_request(message.bot, message.from_user.id)
 
     await message.bot.send_message(
         chat_id=message.chat.id,
