@@ -1,0 +1,8 @@
+.env
+*.db
+.git
+.codex
+local_backups
+__pycache__
+*.pyc
+*.pyo
